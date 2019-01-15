@@ -77,69 +77,80 @@ class TaskGen(object):
         # labels to relative index given the number of classes
         preprocessed_labels = np.asarray(preprocessed_labels)
         self.label_encoder.fit(list(set(preprocessed_labels)))
-        preprocessed_labels = self.label_encoder.transform(preprocessed_labels)
+        re_indexed_labels = self.label_encoder.transform(preprocessed_labels)
 
-        return np.asarray(preprocessed_data), preprocessed_labels, num_classes
+        return np.asarray(preprocessed_data), re_indexed_labels, preprocessed_labels, num_classes
+
+innerstepsize = 1E-3 # stepsize in inner SGD
+innerepochs = 5 # number of epochs of each inner SGD
+inner_batch_size = 5
+outerstepsize0 = 0.1 # stepsize of outer optimization, i.e., meta-optimization
+niterations = 20000 # number of outer updates; each iteration we sample one task and update on it
+
 
 if __name__ == '__main__':
     task_generator = TaskGen()
-    device = torch.device('cpu')
-    model_f = GraySqueezeNetFeatures()
+    device = torch.device('cuda:2')
+    model_f = LeNetFeatures()
+    model_f.to(device)
 
     # Keep different classifier models depending on the number of classes
     classifiers_dictionary = {}
 
-    def train_on_batch(x, y, classifier):
+    def train_on_sampled_data(x, y, classifier):
+        model_f.train()
+        classifier.train()
         criterion = nn.CrossEntropyLoss()
 
         x = torch.tensor(x, dtype=torch.float, device=device)
         y = torch.tensor(y, dtype=torch.float, device=device)
-        print(y)
         model_f.zero_grad()
         classifier.zero_grad()
 
-        features = model_f(x)
-        outputs = classifier(features)
-        # print("output: {} - y: {}".format(outputs.shape, y.shape))
-        loss = criterion(outputs, Variable(y.long()))
-        loss.backward()
-        # optimizer.step()
-        for param in classifier.parameters():
-            param.data -= innerstepsize * param.grad.data
-        for param in model_f.parameters():
-            param.data -= innerstepsize * param.grad.data
+        for start in range(0, len(x), inner_batch_size):
+            features = model_f(x[start:start+inner_batch_size])
+            outputs = classifier(features)
+            # print("output: {} - y: {}".format(outputs.shape, y.shape))
+            loss = criterion(outputs, Variable(y[start:start+inner_batch_size].long()))
+            loss.backward()
+            # optimizer.step()
+            for param in classifier.parameters():
+                param.data -= innerstepsize * param.grad.data
+            for param in model_f.parameters():
+                param.data -= innerstepsize * param.grad.data
+
+        return loss
 
     def predict(x, f, c):
+        f.eval()
+        c.eval()
         x = torch.tensor(x, dtype=torch.float, device=device)
-        # features = model_f(x)
-        # outputs = model_c(features)
-        # return outputs.data.numpy()
         features = f(x)
         outputs = c(features)
-        return outputs.data.numpy()
-
-    innerstepsize = 0.02 # stepsize in inner SGD
-    innerepochs = 1 # number of epochs of each inner SGD
-    outerstepsize0 = 0.1 # stepsize of outer optimization, i.e., meta-optimization
-    niterations = 20 # number of outer updates; each iteration we sample one task and update on it
+        return outputs.cpu().data.numpy()
 
     # Reptile training loop
+    total_loss = 0
     for iteration in range(niterations):
         # Generate task
-        data, labels, num_classes = task_generator.get_task()
-        print("Num classes: {}".format(num_classes))
+        data, labels, original_labels, num_classes = task_generator.get_task()
 
         if num_classes not in classifiers_dictionary.keys():
-            print("yo")
-            current_classifier = GraySqueezeNetClassifier(num_classes=num_classes)
-            classifiers_dictionary[num_classes] = current_classifier
+            current_classifier = LeNetClassifier(num_classes=num_classes)
+            classifiers_dictionary[num_classes] = current_classifier.to(device)
         else:
             current_classifier = classifiers_dictionary[num_classes]
 
         weights_f_before = deepcopy(model_f.state_dict())
         weights_c_before = deepcopy(current_classifier.state_dict())
         for _ in range(innerepochs):
-            train_on_batch(data, labels, current_classifier)
+            loss = train_on_sampled_data(data, labels, current_classifier)
+            total_loss += loss
+        if iteration % 20 == 0:
+            print("-----------------------------")
+            print("iteration               {}".format(iteration+1))
+            print("Loss: {:.3f}".format(total_loss/(iteration+1)))
+
         # Interpolate between current weights and trained weights from this task
         # I.e. (weights_before - weights_after) is the meta-gradient
         weights_f_after = model_f.state_dict()
@@ -151,10 +162,19 @@ if __name__ == '__main__':
         current_classifier.load_state_dict({name :
             weights_c_before[name] + (weights_c_after[name] - weights_c_before[name]) * outerstepsize
             for name in weights_c_before})
-        print("-----------------------------")
-        print("iteration               {}".format(iteration+1))
 
+
+    # Test
+    """
+        1. Create task from test set.
+        2. Reload feature extractor and classifier with the right number of classes
+        3. Train for one iteration on the test set and predict
+    """
+    data, labels, original_labels, num_classes = task_generator.get_task()
+    current_classifier = classifiers_dictionary[num_classes]
+    train_on_sampled_data(data, labels, current_classifier)
     print(predict(data[0][None, :, :, :], model_f, current_classifier))
+    print(original_labels)
     print(labels)
     plt.imshow(data[0][0])
     plt.show()
