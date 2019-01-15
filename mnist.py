@@ -42,17 +42,25 @@ class TaskGen(object):
                                         train=True,
                                         download=True,
                                         transform=self._transform)
-        # self.sample_data_size = 2
-        self.loader = torch.utils.data.DataLoader(self.trainset,
+        self.testset = datasets.MNIST(root='./data',
+                                        train=False,
+                                        download=True,
+                                        transform=self._transform)
+
+        self.train_loader = torch.utils.data.DataLoader(self.trainset,
                                             batch_size=self.sample_data_size,
+                                            shuffle=True)
+        self.test_loader = torch.utils.data.DataLoader(self.testset,
+                                            batch_size=10000,
                                             shuffle=True)
         self.label_encoder = preprocessing.LabelEncoder()
 
-    def get_task(self):
-        num_classes = random.randint(2, TOT_CLASSES)
+    def get_train_task(self, num_classes=0):
+        if num_classes == 0:
+            num_classes = random.randint(2, TOT_CLASSES)
         # num_classes = 10
         selected_labels = random.sample(range(0, TOT_CLASSES), num_classes)
-        _, (data, labels) = next(enumerate(self.loader))
+        _, (data, labels) = next(enumerate(self.train_loader))
         data = data.numpy()
         labels = labels.numpy()
 
@@ -81,12 +89,18 @@ class TaskGen(object):
 
         return np.asarray(preprocessed_data), re_indexed_labels, preprocessed_labels, num_classes
 
+    def get_test(self):
+        _, (data, labels) = next(enumerate(self.train_loader))
+        data = data.numpy()
+        labels = labels.numpy()
+
+        return data, labels
+
 innerstepsize = 1E-3 # stepsize in inner SGD
 innerepochs = 5 # number of epochs of each inner SGD
 inner_batch_size = 5
 outerstepsize0 = 0.1 # stepsize of outer optimization, i.e., meta-optimization
-niterations = 20000 # number of outer updates; each iteration we sample one task and update on it
-
+niterations = 20 # number of outer updates; each iteration we sample one task and update on it
 
 if __name__ == '__main__':
     task_generator = TaskGen()
@@ -133,7 +147,7 @@ if __name__ == '__main__':
     total_loss = 0
     for iteration in range(niterations):
         # Generate task
-        data, labels, original_labels, num_classes = task_generator.get_task()
+        data, labels, original_labels, num_classes = task_generator.get_train_task()
 
         if num_classes not in classifiers_dictionary.keys():
             current_classifier = LeNetClassifier(num_classes=num_classes)
@@ -162,6 +176,7 @@ if __name__ == '__main__':
         current_classifier.load_state_dict({name :
             weights_c_before[name] + (weights_c_after[name] - weights_c_before[name]) * outerstepsize
             for name in weights_c_before})
+        classifiers_dictionary[num_classes] = current_classifier
 
 
     # Test
@@ -170,11 +185,16 @@ if __name__ == '__main__':
         2. Reload feature extractor and classifier with the right number of classes
         3. Train for one iteration on the test set and predict
     """
-    data, labels, original_labels, num_classes = task_generator.get_task()
+    data, labels, original_labels, num_classes = task_generator.get_train_task(num_classes=10)
     current_classifier = classifiers_dictionary[num_classes]
-    train_on_sampled_data(data, labels, current_classifier)
-    print(predict(data[0][None, :, :, :], model_f, current_classifier))
-    print(original_labels)
+    # train_on_sampled_data(data, labels, current_classifier)
+
+    data, labels = task_generator.get_test()
+    predicted_labels = np.argmax(predict(data, model_f, current_classifier),axis=1)
+    print(predicted_labels)
     print(labels)
+    # print(original_labels)
+
+    print("Accuracy before few shot learning: {:2f}%)".format(np.mean(1*(predicted_labels==labels))*100))
     plt.imshow(data[0][0])
     plt.show()
