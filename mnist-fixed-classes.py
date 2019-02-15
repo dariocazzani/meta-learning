@@ -57,12 +57,13 @@ class TaskGen(object):
                                             shuffle=True)
         self.label_encoder = preprocessing.LabelEncoder()
 
-    def _get_task(self, data_loader, num_classes, selected_labels, num_samples):
+    def _get_task(self, data_loader, num_classes, selected_labels, num_samples, distribution):
         """
             - data_loader
             - num_classes
             - selected_labels
             - num_samples
+            - distribution: train, test, enroll
         """
         if len(selected_labels) == 0:
             selected_labels = random.sample(range(0, self.max_num_classes), num_classes)
@@ -70,8 +71,15 @@ class TaskGen(object):
             raise ValueError("The number of selected labels and num classes is not the same")
 
         _, (data, labels) = next(enumerate(data_loader))
-        data = data.numpy()
-        labels = labels.numpy()
+        if distribution == 'test':
+            data = data.numpy()[:5000]
+            labels = labels.numpy()[:5000]
+        elif distribution == 'enroll':
+            data = data.numpy()[5000:]
+            labels = labels.numpy()[5000:]
+        else:
+            data = data.numpy()
+            labels = labels.numpy()
 
         preprocessed_labels = []
         preprocessed_data = []
@@ -106,11 +114,15 @@ class TaskGen(object):
     def get_train_task(self, num_classes):
         if num_classes == 0:
             num_classes = random.randint(2, self.max_num_classes)
-        return self._get_task(self.train_loader, num_classes, selected_labels=[], num_samples=0)
+        return self._get_task(self.train_loader, num_classes, selected_labels=[], num_samples=0, distribution='train')
+
+    def get_enroll_task(self, selected_labels, num_samples):
+        num_classes = len(selected_labels)
+        return self._get_task(self.test_loader, num_classes, selected_labels=selected_labels, num_samples=num_samples, distribution='enroll')
         
     def get_test_task(self, selected_labels, num_samples):
         num_classes = len(selected_labels)
-        return self._get_task(self.test_loader, num_classes, selected_labels=selected_labels, num_samples=num_samples)
+        return self._get_task(self.test_loader, num_classes, selected_labels=selected_labels, num_samples=num_samples, distribution='test')
 
 class Reptile(object):
     def __init__(self, args):
@@ -132,8 +144,8 @@ class Reptile(object):
                 self.model.load_state_dict(torch.load(self.args.model_path))
                 self.current_iteration = joblib.load("{}.iter".format(self.args.model_path))
             except Exception as e:
-                print("Could not load model from {} - starting from scratch".format(self.args.model_path))
-                        
+                print("Exception: {}\nCould not load model from {} - starting from scratch".format(e, self.args.model_path))
+
     def inner_training(self, x, y, num_iterations):
         """
         Run training on task
@@ -233,8 +245,8 @@ class Reptile(object):
     
         weights_before = deepcopy(self.model.state_dict()) # save snapshot before evaluation
         for i in range(1, 5):
-            train_data, train_labels, _, _ = self.task_generator.get_test_task(selected_labels=[1,2,3,4,5], num_samples=i)
-            self.inner_training(train_data, train_labels, self.args.inner_iterations_test)
+            enroll_data, enroll_labels, _, _ = self.task_generator.get_enroll_task(selected_labels=[1,2,3,4,5], num_samples=i)
+            self.inner_training(enroll_data, enroll_labels, self.args.inner_iterations_test)
             predicted_labels = np.argmax(self.predict(test_data), axis=1)
             accuracy = np.mean(1*(predicted_labels==test_labels))*100
             
