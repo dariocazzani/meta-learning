@@ -7,7 +7,7 @@ from torch.autograd import Variable
 import torch.optim as optim
 import torch.nn.init as init
 
-import random
+import random, os, joblib
 from tqdm import tqdm
 import numpy as np
 import matplotlib.pyplot as plt
@@ -115,13 +115,25 @@ class TaskGen(object):
 class Reptile(object):
     def __init__(self, args):
         self.args = args
-        self.model = LeNet()
+        self._load_model()
+
         self.model.to(args.device)
         self.task_generator = TaskGen(args.max_num_classes)
         self.outer_stepsize = args.outer_stepsize
         self.criterion = nn.CrossEntropyLoss()
-        self.optimizer = optim.Adam(self.model.parameters(), lr=args.inner_stepsize)
+        # self.optimizer = optim.Adam(self.model.parameters(), lr=args.inner_stepsize)
 
+    def _load_model(self):
+        self.model = LeNet()
+        self.current_iteration = 0
+        if os.path.exists(self.args.model_path):
+            try:
+                print("Loading model from: {}".format(self.args.model_path))
+                self.model.load_state_dict(torch.load(self.args.model_path))
+                self.current_iteration = joblib.load("{}.iter".format(self.args.model_path))
+            except Exception as e:
+                print("Could not load model from {} - starting from scratch".format(self.args.model_path))
+                        
     def inner_training(self, x, y, num_iterations):
         """
         Run training on task
@@ -137,17 +149,17 @@ class Reptile(object):
         for _ in range(num_iterations):
             start = np.random.randint(0, len(x)-self.args.inner_batch_size+1)
            
-            # self.model.zero_grad()
-            self.optimizer.zero_grad()
+            self.model.zero_grad()
+            # self.optimizer.zero_grad()
             outputs = self.model(x[start:start+self.args.inner_batch_size])
             # print("output: {} - y: {}".format(outputs.shape, y.shape))
             loss = self.criterion(outputs, Variable(y[start:start+self.args.inner_batch_size].long()))
             total_loss += loss
             loss.backward()
-            self.optimizer.step()
+            # self.optimizer.step()
             # Similar to calling optimizer.step()
-            # for param in self.model.parameters():
-            #     param.data -= self.args.inner_stepsize * param.grad.data
+            for param in self.model.parameters():
+                param.data -= self.args.inner_stepsize * param.grad.data
         return total_loss / self.args.inner_iterations
 
     def _meta_gradient_update(self, iteration, num_classes, weights_before):
@@ -170,18 +182,17 @@ class Reptile(object):
         # Reptile training loop
         total_loss = 0
         try:
-            for iteration in range(self.args.n_iterations):
+            while self.current_iteration < self.args.n_iterations:
                 # Generate task
                 data, labels, original_labels, num_classes = self.task_generator.get_train_task(args.num_classes)
                 
                 weights_before = deepcopy(self.model.state_dict())
-                
                 loss = self.inner_training(data, labels, self.args.inner_iterations)
                 total_loss += loss
-                if iteration % self.args.log_every == 0:
+                if self.current_iteration % self.args.log_every == 0:
                     print("-----------------------------")
-                    print("iteration               {}".format(iteration+1))
-                    print("Loss: {:.3f}".format(total_loss/(iteration+1)))
+                    print("iteration               {}".format(self.current_iteration+1))
+                    print("Loss: {:.3f}".format(total_loss/(self.current_iteration+1)))
                     print("Current task info: ")
                     print("\t- Number of classes: {}".format(num_classes))
                     print("\t- Batch size: {}".format(len(data)))
@@ -189,10 +200,15 @@ class Reptile(object):
  
                     self.test()
                 
-                self._meta_gradient_update(iteration, num_classes, weights_before)
+                self._meta_gradient_update(self.current_iteration, num_classes, weights_before)
+                
+                self.current_iteration += 1
                     
         except KeyboardInterrupt:
             print("Manual Interrupt...")
+            print("Saving to: {}".format(self.args.model_path))
+            torch.save(self.model.state_dict(), self.args.model_path)
+            joblib.dump(self.current_iteration, "{}.iter".format(self.args.model_path), compress=1)
 
     def predict(self, x):
         self.model.eval()
@@ -210,24 +226,19 @@ class Reptile(object):
             5. Check accuracy again on test set
         """
         
-        data, labels, _, _ = self.task_generator.get_test_task(selected_labels=[1,2,3,4,5], num_samples=100)
-        predicted_labels = np.argmax(self.predict(data), axis=1)
-        accuracy = np.mean(1*(predicted_labels==labels))*100
-
-        print("Accuracy before few shots learning: {:.2f}%)\n----".format(accuracy))
-        
-        train_data, train_labels, _, _ = self.task_generator.get_test_task(selected_labels=[1,2,3,4,5], num_samples=1)
-        
+        test_data, test_labels, _, _ = self.task_generator.get_test_task(selected_labels=[1,2,3,4,5], num_samples=100)
+        predicted_labels = np.argmax(self.predict(test_data), axis=1)
+        accuracy = np.mean(1*(predicted_labels==test_labels))*100
+        print("Accuracy before few shots learning (a.k.a. zero-shot learning): {:.2f}%\n----".format(accuracy))
+    
         weights_before = deepcopy(self.model.state_dict()) # save snapshot before evaluation
-        for i in range(4):
+        for i in range(1, 5):
+            train_data, train_labels, _, _ = self.task_generator.get_test_task(selected_labels=[1,2,3,4,5], num_samples=i)
             self.inner_training(train_data, train_labels, self.args.inner_iterations_test)
-
-            data, labels, _, _ = self.task_generator.get_test_task(selected_labels=[1,2,3,4,5], num_samples=100)
-            predicted_labels = np.argmax(self.predict(data), axis=1)
-            accuracy = np.mean(1*(predicted_labels==labels))*100
+            predicted_labels = np.argmax(self.predict(test_data), axis=1)
+            accuracy = np.mean(1*(predicted_labels==test_labels))*100
             
-            print("Accuracy after {} shot(s) learning: {:.2f}%)".format(
-                        (i+1)*self.args.inner_iterations_test, accuracy))
+            print("Accuracy after {} shot{} learning: {:.2f}%)".format(i, "" if i == 1 else "s", accuracy))
 
         self.model.load_state_dict(weights_before) # restore from snapshot
             
@@ -239,20 +250,22 @@ if __name__ == '__main__':
                         help='stepsize in inner optimizer')
     parser.add_argument('--inner-iterations', type=int, default=5,
                         help='Number of iterations inner training')
-    parser.add_argument('--inner-iterations-test', type=int, default=1,
+    parser.add_argument('--inner-iterations-test', type=int, default=5,
                         help='Number of iterations inner training at test time')
     parser.add_argument('--inner-batch-size', type=int, default=5,
                         help='Inner Batch Size')
     parser.add_argument('--outer-stepsize', type=float, default=1E-1,
                         help='stepsize of outer optimization, i.e., meta-optimization')
-    parser.add_argument('--n-iterations', type=int, default=100000,
+    parser.add_argument('--n-iterations', type=int, default=400000,
                         help='number of outer updates; each iteration we sample one task and update on it')
     parser.add_argument('--max-num-classes', type=int, default=9,
                         help='Max number of classes in the training set')
     parser.add_argument('--device', type=str, default='cpu',
                         help='HW acceleration')
-    parser.add_argument('--log-every', type=int, default=100,
+    parser.add_argument('--log-every', type=int, default=2000,
                         help="Show progress every n iterations")
+    parser.add_argument('--model-path', type=str, default='model.bin',
+                        help='Path to were to save trained model')
     # parser.add_argument('--num-test-classes', type=int, default=5,
     #                     help='Number of classes for test tasks')
     parser.add_argument('--num-classes', type=int, default=5,
