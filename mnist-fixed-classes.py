@@ -215,7 +215,9 @@ class Reptile(object):
                 self._meta_gradient_update(self.current_iteration, num_classes, weights_before)
                 
                 self.current_iteration += 1
-                    
+
+            torch.save(self.model.state_dict(), self.args.model_path)                    
+
         except KeyboardInterrupt:
             print("Manual Interrupt...")
             print("Saving to: {}".format(self.args.model_path))
@@ -238,7 +240,7 @@ class Reptile(object):
             5. Check accuracy again on test set
         """
         
-        test_data, test_labels, _, _ = self.task_generator.get_test_task(selected_labels=[1,2,3,4,5], num_samples=100)
+        test_data, test_labels, _, _ = self.task_generator.get_test_task(selected_labels=[1,2,3,4,5], num_samples=5000)
         predicted_labels = np.argmax(self.predict(test_data), axis=1)
         accuracy = np.mean(1*(predicted_labels==test_labels))*100
         print("Accuracy before few shots learning (a.k.a. zero-shot learning): {:.2f}%\n----".format(accuracy))
