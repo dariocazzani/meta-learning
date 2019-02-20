@@ -4,3 +4,6 @@ __pycache__/
 .vscode
 .gitignore.save
 *bin
+*iter
+mnist_data
+kmnist_data
