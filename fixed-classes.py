@@ -10,7 +10,7 @@ import torch.nn.init as init
 from helpers.ops import shuffle_unison
 from tasks import TaskGen
 
-import random, os, joblib
+import os, joblib
 from tqdm import tqdm
 import numpy as np
 import matplotlib.pyplot as plt
@@ -20,7 +20,6 @@ from models import LeNet
 
 import argparse
 seed = 42
-random.seed(seed)
 rng = np.random.RandomState(seed)
 torch.manual_seed(seed)
 
