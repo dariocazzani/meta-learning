@@ -28,59 +28,6 @@ class Fire(nn.Module):
             self.expand3x3_activation(self.expand3x3(x))
         ], 1)
 
-class GraySqueezeNetFeatures(nn.Module):
-    def __init__(self):
-        super(GraySqueezeNetFeatures, self).__init__()
-
-        self.features = nn.Sequential(
-            nn.Conv2d(1, 64, kernel_size=3, stride=2),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=3, stride=2, ceil_mode=True),
-            Fire(64, 16, 64, 64),
-            Fire(128, 16, 64, 64),
-            nn.MaxPool2d(kernel_size=3, stride=2, ceil_mode=True),
-            Fire(128, 32, 128, 128),
-            Fire(256, 32, 128, 128),
-            nn.MaxPool2d(kernel_size=3, stride=2, ceil_mode=True),
-            Fire(256, 48, 192, 192),
-            Fire(384, 48, 192, 192),
-            Fire(384, 64, 256, 256),
-            Fire(512, 64, 256, 256),
-        )
-
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                init.kaiming_uniform_(m.weight)
-                if m.bias is not None:
-                    init.constant_(m.bias, 0)
-
-    def forward(self, x):
-        x = self.features(x)
-        return x
-
-class GraySqueezeNetClassifier(nn.Module):
-    def __init__(self, num_classes=1000):
-        super(GraySqueezeNetClassifier, self).__init__()
-        self.num_classes = num_classes
-
-        # Final convolution is initialized differently form the rest
-        final_conv = nn.Conv2d(512, self.num_classes, kernel_size=1)
-        self.classifier = nn.Sequential(
-            nn.Dropout(p=0.5),
-            final_conv,
-            nn.ReLU(inplace=True),
-            nn.AdaptiveAvgPool2d((1, 1))
-        )
-
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                if m is final_conv:
-                    init.normal_(m.weight, mean=0.0, std=0.01)
-
-    def forward(self, x):
-        x = self.classifier(x)
-        return x.view(x.size(0), self.num_classes)
-
 class GraySqueezeNet(nn.Module):
     def __init__(self, num_classes=1000):
         super(GraySqueezeNet, self).__init__()
