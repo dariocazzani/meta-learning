@@ -145,13 +145,17 @@ class LeNet(nn.Module):
         out = self.fc3(out)
         return out
 
-class LeNetFeatures(nn.Module):
+class LeNetHydra(nn.Module):
     def __init__(self):
-        super(LeNetFeatures, self).__init__()
+        super(LeNetHydra, self).__init__()
         self.conv1 = nn.Conv2d(1, 6, 5)
         self.conv2 = nn.Conv2d(6, 16, 5)
         self.fc1   = nn.Linear(16*4*4, 120)
         self.fc2   = nn.Linear(120, 84)
+        # create N classifiers
+        for c in range(2, 11):
+            self.__setattr__('%d' % c,
+                                nn.Linear(84, c))
 
     def forward(self, x):
         out = F.relu(self.conv1(x))
@@ -161,29 +165,12 @@ class LeNetFeatures(nn.Module):
         out = out.view(out.size(0), -1)
         out = F.relu(self.fc1(out))
         out = F.relu(self.fc2(out))
-        return out
-
-class LeNetClassifier(nn.Module):
-    def __init__(self, num_classes):
-        super(LeNetClassifier, self).__init__()
-        self.fc = nn.Linear(84, num_classes)
-
-    def forward(self, x):
-        return self.fc(x)
+        return {'%d' % c: self.__getattr__('%d' % c)(out) 
+            for c in range(2, 11)}
 
 if __name__ == '__main__':
     x = torch.randn(1, 1, 28, 28)
-    model_f = LeNetFeatures()
-    features = model_f(x)
-    print(features.shape)
-    #
-    # model_f = GraySqueezeNetFeatures()
-    # model_c = GraySqueezeNetClassifier(10)
-    #
-    # features = model_f(x)
-    # outputs = model_c(features)
-    # print(outputs)
-    #
-    # model = GraySqueezeNet(10)
-    # outputs = model(x)
-    # print(outputs)
+    model = LeNetHydra()
+    output = model(x)['10']
+    print(output.shape)
+    
