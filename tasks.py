@@ -10,19 +10,19 @@ import random
 import numpy as np
 
 class TaskGen(object):
-    def __init__(self, max_num_classes, use_kmnist=False):
+    def __init__(self, args):
         self._transform = torchvision.transforms.Compose([
           torchvision.transforms.ToTensor(),
           torchvision.transforms.Normalize(
             (0.1307,), (0.3081,))
         ])
+        self.use_kmnist = args.use_kmnist
+        self.max_num_classes = args.max_num_classes
+        self.max_samples_per_class = args.max_samples_per_class
 
-        self.max_num_classes = max_num_classes
-
-        self.sample_data_size = 1024
-        self.max_samples_pre_class = 10
-
-        if use_kmnist:
+        self.sample_data_size = self.max_num_classes * self.max_samples_per_class * 10
+        
+        if self.use_kmnist:
             self.trainset = KMNIST(root='./kmnist_data',
                                             train=True,
                                             download=True,
@@ -75,7 +75,7 @@ class TaskGen(object):
         preprocessed_data = []
         for c in range(num_classes):
             if num_samples == 0:
-                class_num_samples = random.randint(2, self.max_samples_pre_class)
+                class_num_samples = random.randint(2, self.max_samples_per_class)
             else:
                 class_num_samples = num_samples
 

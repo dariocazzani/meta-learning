@@ -33,7 +33,7 @@ class Reptile(object):
         self._load_model()
 
         self.model.to(args.device)
-        self.task_generator = TaskGen(args.max_num_classes)
+        self.task_generator = TaskGen(args)
         self.outer_stepsize = args.outer_stepsize
         self.criterion = nn.CrossEntropyLoss()
         # self.optimizer = optim.Adam(self.model.parameters(), lr=args.inner_stepsize)
@@ -112,8 +112,9 @@ class Reptile(object):
                     print("\t- Number of classes: {}".format(num_classes))
                     print("\t- Batch size: {}".format(len(data)))
                     print("\t- Labels: {}".format(set(original_labels)))
- 
-                    self.test()
+                    
+                    if self.args.run_tests:
+                        self.test()
                 
                 self._meta_gradient_update(self.current_iteration, weights_before)
                 
@@ -143,8 +144,8 @@ class Reptile(object):
             5. Check accuracy again on test set
         """
         
-        for test_classes in range(2, 11):
-            selected_labels = random.sample(range(0, 10), test_classes)
+        for test_classes in range(2, self.args.max_num_classes+1):
+            selected_labels = random.sample(range(0, self.args.max_num_classes), test_classes)
             test_data, test_labels, _, num_classes = self.task_generator.get_test_task(selected_labels=selected_labels, num_samples=-1) # all available samples
             predicted_labels = np.argmax(self.predict(test_data, num_classes), axis=1)
             accuracy = np.mean(1*(predicted_labels==test_labels))*100
@@ -165,7 +166,7 @@ class Reptile(object):
 if __name__ == '__main__':
     import argparse
 
-    parser = argparse.ArgumentParser(description='Meta Learning for MNIST')
+    parser = argparse.ArgumentParser(description='Meta Learning with Reptile')
     parser.add_argument('--inner-stepsize', type=float, default=1E-3,
                         help='stepsize in inner optimizer')
     parser.add_argument('--inner-iterations', type=int, default=5,
@@ -178,22 +179,23 @@ if __name__ == '__main__':
                         help='stepsize of outer optimization, i.e., meta-optimization')
     parser.add_argument('--n-iterations', type=int, default=400000,
                         help='number of outer updates; each iteration we sample one task and update on it')
-    parser.add_argument('--max-num-classes', type=int, default=9,
+    parser.add_argument('--max-num-classes', type=int, default=10,
                         help='Max number of classes in the training set')
+    parser.add_argument('--max-samples-per-class', type=int, default=10,
+                        help='Maximum number of sample per class during training')
     parser.add_argument('--device', type=str, default='cpu',
                         help='HW acceleration')
     parser.add_argument('--log-every', type=int, default=2000,
                         help="Show progress every n iterations")
     parser.add_argument('--model-path', type=str, default='model.bin',
                         help='Path to were to save trained model')
-    # parser.add_argument('--num-test-classes', type=int, default=5,
-    #                     help='Number of classes for test tasks')
-    parser.add_argument('--num-classes', type=int, default=5,
-                    help='Number of classes for training tasks')
+    parser.add_argument('--use-kmnist', action='store_true', default=False,
+                        help="Use kmnist for training the meta classifier")
+    parser.add_argument('--run-tests', action='store_true', default=False,
+                        help="Run tests every time we show the loss")
 
     args = parser.parse_args()
 
-    task_generator = TaskGen(args.max_num_classes)
     reptile = Reptile(args)
     reptile.meta_training()
     reptile.test()
