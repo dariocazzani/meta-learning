@@ -93,14 +93,15 @@ class LeNet(nn.Module):
         return out
 
 class LeNetHydra(nn.Module):
-    def __init__(self):
+    def __init__(self, max_num_classes):
         super(LeNetHydra, self).__init__()
+        self.max_num_classes = max_num_classes
         self.conv1 = nn.Conv2d(1, 6, 5)
         self.conv2 = nn.Conv2d(6, 16, 5)
         self.fc1   = nn.Linear(16*4*4, 120)
         self.fc2   = nn.Linear(120, 84)
         # create N classifiers
-        for c in range(2, 11):
+        for c in range(2, self.max_num_classes+1):
             self.__setattr__('%d' % c,
                                 nn.Linear(84, c))
 
@@ -113,11 +114,11 @@ class LeNetHydra(nn.Module):
         out = F.relu(self.fc1(out))
         out = F.relu(self.fc2(out))
         return {'%d' % c: self.__getattr__('%d' % c)(out) 
-            for c in range(2, 11)}
+            for c in range(2, self.max_num_classes+1)}
 
 if __name__ == '__main__':
     x = torch.randn(1, 1, 28, 28)
-    model = LeNetHydra()
+    model = LeNetHydra(10)
     output = model(x)['10']
     print(output.shape)
     
