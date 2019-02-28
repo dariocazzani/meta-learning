@@ -28,7 +28,7 @@ class TaskGen(object):
                                             download=True,
                                             transform=self._transform)
         else:
-            self.trainset = datasets.MNIST(root='./kmnist_data',
+            self.trainset = datasets.MNIST(root='./mnist_data',
                                             train=True,
                                             download=True,
                                             transform=self._transform)

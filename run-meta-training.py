@@ -120,7 +120,8 @@ class Reptile(object):
                 
                 self.current_iteration += 1
 
-            torch.save(self.model.state_dict(), self.args.model_path)                    
+            torch.save(self.model.state_dict(), self.args.model_path)       
+            joblib.dump(self.current_iteration, "{}.iter".format(self.args.model_path), compress=1)             
 
         except KeyboardInterrupt:
             print("Manual Interrupt...")
