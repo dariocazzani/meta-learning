@@ -97,7 +97,9 @@ class Reptile(object):
         # Reptile training loop
         total_loss = 0
         try:
+            pbar = tqdm(total=self.args.n_iterations, initial=self.current_iteration)
             while self.current_iteration < self.args.n_iterations:
+                pbar.update(1)
                 # Generate task with random number of classes
                 data, labels, original_labels, num_classes = self.task_generator.get_train_task(num_classes=0)
                 
@@ -119,13 +121,15 @@ class Reptile(object):
                 self._meta_gradient_update(self.current_iteration, weights_before)
                 
                 self.current_iteration += 1
-
+            
+            pbar.close()
             torch.save(self.model.state_dict(), self.args.model_path)       
             joblib.dump(self.current_iteration, "{}.iter".format(self.args.model_path), compress=1)             
 
         except KeyboardInterrupt:
             print("Manual Interrupt...")
             print("Saving to: {}".format(self.args.model_path))
+            pbar.close()
             torch.save(self.model.state_dict(), self.args.model_path)
             joblib.dump(self.current_iteration, "{}.iter".format(self.args.model_path), compress=1)
 
