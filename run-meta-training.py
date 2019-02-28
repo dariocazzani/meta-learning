@@ -39,7 +39,7 @@ class Reptile(object):
         # self.optimizer = optim.Adam(self.model.parameters(), lr=args.inner_stepsize)
 
     def _load_model(self):
-        self.model = LeNetHydra()
+        self.model = LeNetHydra(self.args.max_num_classes)
         self.current_iteration = 0
         if os.path.exists(self.args.model_path):
             try:
@@ -145,8 +145,8 @@ class Reptile(object):
             5. Check accuracy again on test set
         """
         
-        for test_classes in range(2, self.args.max_num_classes+1):
-            selected_labels = random.sample(range(0, self.args.max_num_classes), test_classes)
+        for test_classes in range(2, self.args.max_num_test_classes+1):
+            selected_labels = random.sample(range(0, self.args.max_num_test_classes), test_classes)
             test_data, test_labels, _, num_classes = self.task_generator.get_test_task(selected_labels=selected_labels, num_samples=-1) # all available samples
             predicted_labels = np.argmax(self.predict(test_data, num_classes), axis=1)
             accuracy = np.mean(1*(predicted_labels==test_labels))*100
@@ -182,6 +182,8 @@ if __name__ == '__main__':
                         help='number of outer updates; each iteration we sample one task and update on it')
     parser.add_argument('--max-num-classes', type=int, default=10,
                         help='Max number of classes in the training set')
+    parser.add_argument('--max-num-test-classes', type=int, default=10,
+                        help='Max number of classes in the test set')
     parser.add_argument('--max-samples-per-class', type=int, default=10,
                         help='Maximum number of sample per class during training')
     parser.add_argument('--device', type=str, default='cpu',
