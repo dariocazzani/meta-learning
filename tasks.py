@@ -1,6 +1,7 @@
 import torch
 import torchvision
 import torchvision.datasets as datasets
+from torch.utils.data.sampler import SubsetRandomSampler
 
 from helpers.datasets import KMNIST
 from helpers.ops import shuffle_unison
@@ -22,37 +23,65 @@ class TaskGen(object):
 
         self.sample_data_size = self.max_num_classes * self.max_samples_per_class * 10
         
+        # Combine kmnist and mnist in one dataset
         if self.use_kmnist:
-            self.trainset = KMNIST(root='./kmnist_data',
+            kmnist = KMNIST(root='./kmnist_data',
                                             train=True,
                                             download=True,
                                             transform=self._transform)
+
+            mnist = datasets.MNIST(root='./mnist_data',
+                                    train=True,
+                                    download=True,
+                                    transform=self._transform)
+
+            # labels go from 0 to 9 for both datasets.
+            # Add 10 to mnist labels so that we have 20 classes with labels from 0 to 19
+            mnist.train_labels += 10 
+
+            self.trainset = torch.utils.data.ConcatDataset([kmnist, mnist])
         else:
             self.trainset = datasets.MNIST(root='./mnist_data',
                                             train=True,
                                             download=True,
                                             transform=self._transform)
 
-        self.enrollset = datasets.MNIST(root='./mnist_data',
-                                        train=True,
-                                        download=True,
-                                        transform=self._transform)
         self.testset = datasets.MNIST(root='./mnist_data',
                                         train=False,
                                         download=True,
                                         transform=self._transform)
+        
+        num_train = len(self.trainset)
+        indices = list(range(num_train))
+        enroll_size = 0.2
+        split = int(np.floor(enroll_size * num_train))
 
-        self.train_loader = torch.utils.data.DataLoader(self.trainset,
-                                            batch_size=self.sample_data_size,
-                                            shuffle=True)
-        self.enroll_loader = torch.utils.data.DataLoader(self.enrollset,
-                                    batch_size=self.sample_data_size,
-                                    shuffle=True)
+        np.random.seed(42)
+        np.random.shuffle(indices)
+
+        train_idx, enroll_idx = indices[split:], indices[:split]
+
+        train_sampler = SubsetRandomSampler(train_idx)
+        enroll_sampler = SubsetRandomSampler(enroll_idx)
+
+        self.train_loader = torch.utils.data.DataLoader(self.trainset, 
+                                    batch_size=self.sample_data_size, 
+                                    sampler=train_sampler,
+                                    num_workers=8, 
+                                    pin_memory=True)
+        
+        self.enroll_loader = torch.utils.data.DataLoader(self.trainset, 
+                                    batch_size=self.sample_data_size, 
+                                    sampler=enroll_sampler,
+                                    num_workers=8, 
+                                    pin_memory=True)
         self.test_loader = torch.utils.data.DataLoader(self.testset,
-                                            batch_size=10000,
-                                            shuffle=True)
+                                    batch_size=10000,
+                                    shuffle=True,
+                                    num_workers=8, 
+                                    pin_memory=True)
+        
         self.label_encoder = preprocessing.LabelEncoder()
-
     def _get_task(self, data_loader, num_classes, selected_labels, num_samples):
         """
             - data_loader
