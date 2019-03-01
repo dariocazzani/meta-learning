@@ -21,7 +21,7 @@ class TaskGen(object):
         self.max_num_classes = args.max_num_classes
         self.max_samples_per_class = args.max_samples_per_class
 
-        self.sample_data_size = self.max_num_classes * self.max_samples_per_class * 10
+        self.sample_data_size = self.max_num_classes * self.max_samples_per_class * 3
         
         # Combine kmnist and mnist in one dataset
         if self.use_kmnist:
@@ -66,19 +66,15 @@ class TaskGen(object):
 
         self.train_loader = torch.utils.data.DataLoader(self.trainset, 
                                     batch_size=self.sample_data_size, 
-                                    num_workers=1, 
-                                    pin_memory=True)
+                                    shuffle=True)
         
         self.enroll_loader = torch.utils.data.DataLoader(self.testset, 
                                     batch_size=10000, 
-                                    sampler=enroll_sampler,
-                                    num_workers=1, 
-                                    pin_memory=True)
+                                    sampler=enroll_sampler)
+                                    
         self.test_loader = torch.utils.data.DataLoader(self.testset,
                                     batch_size=10000,
-                                    sampler=test_sampler,
-                                    num_workers=1, 
-                                    pin_memory=True)
+                                    sampler=test_sampler)
         
         self.label_encoder = preprocessing.LabelEncoder()
     def _get_task(self, data_loader, num_classes, selected_labels, num_samples):
