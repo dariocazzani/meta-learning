@@ -51,34 +51,33 @@ class TaskGen(object):
                                         download=True,
                                         transform=self._transform)
         
-        num_train = len(self.trainset)
-        indices = list(range(num_train))
+        num_test = len(self.testset)
+        indices = list(range(num_test))
         enroll_size = 0.2
-        split = int(np.floor(enroll_size * num_train))
+        split = int(np.floor(enroll_size * num_test))
 
         np.random.seed(42)
         np.random.shuffle(indices)
 
-        train_idx, enroll_idx = indices[split:], indices[:split]
+        test_idx, enroll_idx = indices[split:], indices[:split]
 
-        train_sampler = SubsetRandomSampler(train_idx)
+        test_sampler = SubsetRandomSampler(test_idx)
         enroll_sampler = SubsetRandomSampler(enroll_idx)
 
         self.train_loader = torch.utils.data.DataLoader(self.trainset, 
                                     batch_size=self.sample_data_size, 
-                                    sampler=train_sampler,
-                                    num_workers=8, 
+                                    num_workers=1, 
                                     pin_memory=True)
         
-        self.enroll_loader = torch.utils.data.DataLoader(self.trainset, 
-                                    batch_size=self.sample_data_size, 
+        self.enroll_loader = torch.utils.data.DataLoader(self.testset, 
+                                    batch_size=10000, 
                                     sampler=enroll_sampler,
-                                    num_workers=8, 
+                                    num_workers=1, 
                                     pin_memory=True)
         self.test_loader = torch.utils.data.DataLoader(self.testset,
                                     batch_size=10000,
-                                    shuffle=True,
-                                    num_workers=8, 
+                                    sampler=test_sampler,
+                                    num_workers=1, 
                                     pin_memory=True)
         
         self.label_encoder = preprocessing.LabelEncoder()
